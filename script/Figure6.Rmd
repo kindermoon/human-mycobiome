@@ -1,0 +1,223 @@
+## --- Environment Setup ---
+library(aod)      
+library(dplyr)    
+library(plyr)     
+library(ggplot2)  
+library(eoffice)  
+
+## Figure 6A-C. Neutral Community modeling of typical ecological processes between mucosal and luminal compartments in GI organs
+map  <- read.table("data/metadata_filtered.tsv", header = T, sep = "\t", row.names = 1)
+otu <- read.table(data/fig6/otu_filtered_rare.tsv", header=T,sep="\t",stringsAsFactors=F,row.names=1)
+source("script/neutral_model.R")
+source("script/nmf_plot.R")
+model.add <- function(model.fit) {
+        for (i in 1:nrow(model.fit)) {
+                m <- model.fit[i,]
+                if (m$freq > m$pred.lwr & m$freq < m$pred.upr) {
+                        model.fit$tax_type[i] <- "Predicted"
+                } else if (m$freq >= m$pred.upr) {
+                        model.fit$tax_type[i] <- "Above"
+                } else {
+                        model.fit$tax_type[i] <- "Below"
+                }
+        }
+        return(model.fit)
+}
+
+SA_mucosa <- otu[rownames(mapping[mapping$BS %in% "Stomach" & mapping$sampletype %in% "M",]),]
+SA_lumen <- otu[rownames(mapping[mapping$BS %in% "Stomach" & !mapping$sampletype %in% "M",]),]
+SI_mucosa <- otu[rownames(mapping[mapping$BS %in% "SmallIntestine" & mapping$sampletype %in% "M",]),]
+SI_lumen <- otu[rownames(mapping[mapping$BS %in% "SmallIntestine" & !mapping$sampletype %in% "M",]),]
+LI_mucosa <- otu[rownames(mapping[mapping$BS %in% "LargeIntestine" & mapping$sampletype %in% "M",]),]
+LI_lumen <- otu[rownames(mapping[mapping$BS %in% "LargeIntestine" & mapping$site != "ANAL" & !mapping$sampletype %in% "M",]),]
+
+# NMF modeling of stochastic process
+TM <- list(SA_mucosa,SA_lumen,SI_mucosa,SI_lumen,LI_mucosa,LI_lumen)
+fn <- c("SAM","SAL","SIM","SIL","LIM","LIL")
+model_para <- data.frame()
+for (i in 1:length(TM)) {
+        region <- fn[i]
+        sink <- TM[[i]]
+        model.stat <- sncm.fit(sink,stats=TRUE)
+        model.fit <- sncm.fit(sink,stats=FALSE)
+        model.pred <- model.add(model.fit)
+        temp <- data.frame(organ=region,
+                           R2=round(model.stat$Rsqr,5),
+                           m=round(model.stat$m,5),
+                           pval=model.stat$m.pval,
+                           AIC=round(model.stat$AIC,5),
+                           AIC.bino=round(model.stat$AIC.bino,5),
+                           N.otu=model.stat$Richness,
+                           N.above=as.matrix(table(model.pred$tax_type))[1],
+                           N.below=as.matrix(table(model.pred$tax_type))[2],
+                           N.pred=as.matrix(table(model.pred$tax_type))[3])
+        model_para <- rbind(model_para,temp)
+        myplot <- nmf_plot(model.fit,model.stat)
+        figname <- paste(region,"_stochastic.pdf",sep="")
+        pdf(figname,height=3,width=3.6)
+        print(myplot)
+        dev.off()
+}
+
+# NMF modeling of transmission process between mucosal and lumen comopartments
+L1 <- list(SA_mucosa,SI_mucosa,LI_mucosa)
+L2 <- list(SA_lumen,SI_lumen,LI_lumen)
+fnA <- c("SA-L2M","SI-L2M","LI-L2M")
+transmission_para <- data.frame()
+for (i in 1:length(L1)) {
+        route <- fnA[i]
+        sink <- L1[[i]]
+        souc <- L2[[i]]
+        model.stat <- sncm.fit(sink,pool=souc,stats=TRUE)
+        model.fit <- sncm.fit(sink,pool=souc,stats=FALSE)
+        model.pred <- model.add(model.fit)
+        temp <- data.frame(transmission=route,
+                           R2=round(model.stat$Rsqr,5),
+                           m=round(model.stat$m,5),
+                           pval=model.stat$m.pval,
+                           AIC=round(model.stat$AIC,5),
+                           AIC.bino=round(model.stat$AIC.bino,5),
+                           N.otu=model.stat$Richness,
+                           N.above=as.matrix(table(model.pred$tax_type))[1],
+                           N.below=as.matrix(table(model.pred$tax_type))[2],
+                           N.pred=as.matrix(table(model.pred$tax_type))[3])
+        transmission_para <- rbind(transmission_para,temp)
+        myplot <- nmf_plot(model.fit,model.stat)
+        figname <- paste(route,"_transmission.pdf",sep="")
+        pdf(figname,height=3,width=3.6)
+        print(myplot)
+        dev.off()
+}
+
+## Figure 6D-E. Transmission of fungal taxa between mucosal and luminal sites in GI organs at OTU level
+# Load Global Data
+data <- read.table("data/fig6/otu_filtered.tsv", header = T, sep = "\t", row.names = 1, check.names = F)
+map  <- read.table("data/metadata_filtered.tsv", header = T, sep = "\t", row.names = 1)
+tax  <- read.table("data/fig6/tax_9840_ano.txt", header = T, sep = "\t")
+rownames(tax) <- tax$OTU
+
+## --- Define the Beta-Binomial Summary Function ---
+fm_summary <- function(data, map, site1, site2) {
+  # Subset metadata for the specific comparison
+  rowmap <- map[map$subsite %in% c(site1, site2), ]
+  name   <- intersect(rownames(rowmap), colnames(data))  
+  if (length(name) == 0) return(NULL)
+  use_data <- data[, name]
+  rowmap   <- rowmap[name, ]
+  use_data <- use_data[rowSums(use_data) != 0, ]
+ 
+  # Assign simplified types for the model
+  rowmap$type <- ifelse(rowmap$subsite == site1, "a", "b")
+  sumvalue    <- colSums(use_data)
+  result <- data.frame()
+  current_site_label <- paste(unique(rowmap$site), collapse = "_")
+  
+  # Iterate through each Taxon
+  for (i in 1:nrow(use_data)) {
+    taxon_name <- rownames(use_data)[i]
+    # Build model data frame
+    use_df <- data.frame(
+      y       = as.numeric(use_data[i, ]),
+      type    = rowmap$type,
+      subject = rowmap$subject,
+      n       = sumvalue
+    )   
+    # Fit Beta-Binomial Model
+    # formula: cbind(success, failure) ~ predictors
+    try({
+      fm      <- betabin(cbind(y, n - y) ~ type + subject, ~ 1, data = use_df)
+      fm_sum  <- summary(fm)
+      
+      # Extract Beta (Effect Size) and P-value for the 'type' variable
+      beta_val <- fm_sum@Coef$Estimate[2]
+      p_val    <- fm_sum@Coef$`Pr(> |z|)`[2]
+      
+      result <- rbind(result, data.frame(
+        Tax       = taxon_name,
+        betavalue = as.numeric(beta_val),
+        pvalue    = as.numeric(p_val),
+        Site      = current_site_label
+      ))
+    }, silent = TRUE)
+  }
+  
+  if (nrow(result) == 0) return(NULL)
+  # FDR Correction and filtering
+  result$qvalue <- p.adjust(result$pvalue, method = "fdr")
+  return(result[!is.na(result$pvalue) & result$pvalue < 0.05, ])
+}
+
+## --- Main Processing Loop ---
+bs_list <- c("Stomach", "SmallIntestine", "LargeIntestine")
+for (name in bs_list) {
+  message(">>> Processing Body Site: ", name)
+  result_all <- data.frame()
+  use_map <- map[map$BS == name, ]
+  # --- Comparison Logic ---
+  if (name == "Stomach") {
+    mucosa_site <- unique(use_map$subsite[use_map$pair_grp == "stomach_mucosa"])
+    lumen_site  <- unique(use_map$subsite[use_map$pair_grp == "stomach_lumen"])
+    for (m in mucosa_site) {
+      temp <- fm_summary(data, map, m, lumen_site)
+      result_all <- rbind(result_all, temp)
+    }
+  } else {
+    # Logic for SI and LI: Match by parent 'site'
+    mucosa_sites <- unique(use_map$site[grepl("mucosa", use_map$pair_grp)])
+    lumen_sites  <- unique(use_map$site[grepl("lumen", use_map$pair_grp)])
+    common_sites <- intersect(mucosa_sites, lumen_sites)
+    for (s in common_sites) {
+      sub_samples <- use_map[use_map$site == s, ]
+      a <- unique(sub_samples$subsite[grepl("mucosa", sub_samples$pair_grp)])
+      b <- unique(sub_samples$subsite[grepl("lumen", sub_samples$pair_grp)])
+      if (length(a) > 0 && length(b) > 0) {
+        temp <- fm_summary(data, map, a, b)
+        result_all <- rbind(result_all, temp)
+      }
+    }
+  }
+  
+  if (nrow(result_all) == 0) next
+  
+  # --- Consistency Filtering ---
+  # Keep Taxa that are consistently Positive OR consistently Negative across sites
+  consistency_list <- result_all %>%
+    group_by(Tax) %>%
+    summarise(
+      Pos = sum(betavalue > 0),
+      Neg = sum(betavalue < 0)
+    ) %>%
+    filter((Pos > 0 & Neg == 0) | (Pos == 0 & Neg > 0))
+  
+  figdata <- result_all[result_all$Tax %in% consistency_list$Tax, ]
+  
+  # --- Visualization Preparation ---
+  # Calculate Mean Beta for sorting
+  df_mean <- figdata %>%
+    group_by(Tax) %>%
+    summarise(mean_beta = mean(betavalue)) %>%
+    arrange(mean_beta)
+  
+  # Order Factors
+  figdata$Tax <- factor(figdata$Tax, levels = df_mean$Tax)
+  
+  # Taxonomy and Color Mapping
+  use_tax_info <- tax[as.character(df_mean$Tax), ]
+  # (Note: Ensure your phylum_color.txt and phylum_tax.txt are correctly formatted)
+  
+  # --- Generate Final Plot ---
+  p <- ggplot(figdata, aes(x = betavalue, y = Tax)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+    # Individual site results
+    geom_point(aes(fill = Site), shape = 21, size = 2, alpha = 0.7) +
+    # Mean indicator (vertical bar)
+    geom_point(data = df_mean, aes(x = mean_beta, y = Tax), shape = "|", size = 3, color = "black") +
+    scale_fill_brewer(palette = "Set1") + # Generic palette, swap with scale_fill_manual if needed
+    theme_bw() +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.y = element_text(size = 7), # You can map colors here if use_tax_info$color exists
+      axis.title = element_text(size = 10)
+    ) +
+    labs(title = paste(name, ": Mucosa vs Lumen (Beta-Binomial)"), x = "Beta Value", y = "")
+}

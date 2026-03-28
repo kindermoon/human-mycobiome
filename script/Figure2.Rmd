@@ -1,0 +1,382 @@
+## Load required packages
+library(phyloseq)
+library(ggplot2)
+library(lpridge)
+library(pracma)
+library(dplyr)
+library(LOCOM)
+library(ComplexHeatmap)
+library(circlize)
+library(dplyr)
+
+## Figure 2A. Comparsion of alpha diversity among diverse organs.
+data <- read.table("data/fig2/otu_alpha.txt",header = TRUE, sep = "\t")
+##  Figure 1A. Comparison of alpha diversity among GI organs
+BScolor <- c("#EFA341","#008000","#810C02","#B868FF","#0433FF","#00CED1","#C3247E")
+BSlist <- c("Skin","OralCavity","Esophagus","Stomach","SmallIntestine","Appendix","LargeIntestine")
+data$BS <- factor(data$BS,levels=BSlist)
+g1 <- ggplot(results,aes(BS,log2(Richness))) +
+            geom_boxplot(aes(fill=BS),color="black",width=.8,cex=.5,
+                         notch=T,notchwidth=0.6,outlier.color=NA) +
+            labs(x="",y="log2 (Richness)") +
+            scale_fill_manual(values=BScolor) +
+            scale_y_continuous(limits=c(3.5,11)) + mytheme
+for (i in 1:length(x2)) {
+        p2 <- p2 + geom_point(x=x2[i],y=y2[i],fill='white',
+                            color='white',size=2.0,shape=23)
+}
+
+## Figure 2B. Alpha diverisyt of multiple sites within different organs
+subsite_levels <- c("CHEST","BACK","LF","RF","LH","RH","LS","RS","ZJX","RJX",
+                    "LC","RC","UL","LL","UM","LM","ESOM","ZA1","Z","ZB1",
+                    "SF","SB","SA","PY","GJ","DUS","DUPA","TRE","JEJ100",
+                    "JEJ200","IIE300","IIE400","IICP","IIC","AP","TOC",
+                    "ASCM","TRC","DECM","SICM","RECU","ANAL")
+data$Subsite <- factor(data$Subsite, levels = subsite_levels)
+data$group <- paste(data$Subsite, data$Type, sep = "_")
+
+site <- unique(as.character(data$group))
+meanfig <- data.frame()
+
+for(i in 1:length(site)){
+  subset_data <- data[data$group == site[i], ]
+  meanfig[i, 1] <- unique(subset_data$Subsite)
+  meanfig[i, 2] <- unique(subset_data$Type)
+  meanfig[i, 3] <- mean(log2(subset_data$richness))
+}
+
+colnames(meanfig) <- c("Subsite", "Type", "Value")
+meanfig$Subsite <- factor(meanfig$Subsite, levels = subsite_levels)
+
+meanfig$ID[order(meanfig$Subsite, meanfig$Type)] <- c(
+  seq(1, 26), 26.8, 27.2, 28, 28.8, 29.2, 30, 30.8, 31.2, 32, 
+  32.8, 33.2, 33.8, 34.2, 35, 35.8, 36.2, 36.8, 37.2, 37.8, 
+  38.2, 38.8, 39.2, 39.8, 40.2, 40.8, 41.2, 42
+)
+
+label <- c("TOC", "ASCM", "TRC", "DECM", "SICM", "RECU", "ANAL")
+meanfig$name <- paste(meanfig$Subsite, meanfig$Type, sep = "_")
+
+linefig <- meanfig[meanfig$Subsite %in% label, ]
+linefig_s <- linefig[linefig$Type == "S", ]
+linefig_m <- linefig[linefig$Type == "M", ]
+pm <- polyfit(linefig_m$ID, linefig_m$Value, 4)
+ps <- polyfit(linefig_s$ID, linefig_s$Value, 4)
+linedatam <- data.frame(Value = polyval(pm, linefig_m$ID), ID = linefig_m$ID, Type = "M")
+linedatas <- data.frame(Value = polyval(ps, linefig_s$ID), ID = linefig_s$ID, Type = "S")
+linedata <- rbind(linedatam, linedatas)
+
+g2 <- ggplot(data = data, aes(x = Subsite, y = log2(richness), fill = Type)) +
+  geom_boxplot(width = 0.8, outlier.alpha = 0, color = "black", size = 0.3) +
+  labs(x = "", y = "Log2 (Alpha Diversity)") +
+  geom_point(data = meanfig, aes(x = ID, y = Value, color = Type), 
+             shape = 23, size = 1.5, fill = "white") +
+  scale_fill_manual(values = c("#009E73", "#E69F00")) +
+  scale_color_manual(values = c("#009E73", "#E69F00")) +
+  geom_line(data = linedata, aes(x = ID, y = value, color = Type), size = 2) + 
+  theme_classic() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1, color = "black", size = 8, vjust = 0.5),
+        axis.text.y = element_text(color = "black", size = 8),
+        axis.text = element_text(color = "black", size = 10, face = "bold")) +
+  scale_y_continuous(limits = c(3, 13), breaks = c(5, 7, 9, 11, 13))
+
+box_bk <- data.frame(
+  start = c(0, 10.5, 16.5, 20.5, 25.5, 34.5, 35.5),
+  end = c(10.5, 16.5, 20.5, 25.5, 34.5, 35.5, 42.5),
+  colors = c("gray70", "NA", "gray70", "NA", "gray70", "NA", "gray70")
+)
+
+for (i in 1:nrow(box_bk)) {
+  g2 <- g2 + annotate("rect", xmin = box_bk[i, ]$start, xmax = box_bk[i, ]$end,
+                      ymin = -Inf, ymax = Inf, alpha = 0.5, fill = box_bk[i, ]$colors)
+}
+
+## Figure 2C. Beta diversity plot preprared by origin software, no code available
+
+## Figure 2D. Differential abundance analysis between skin and GI
+otu.table <- read.table("data/fig2/species_count.tsv",header = TRUE, sep = "\t", row.names = 1, check.names = FALSE)
+meta <- read.table("data/fig2/otu_alpha.txt",header = TRUE, sep = "\t", row.names = 1)
+tax <- read.table("data/fig2/phylum_species.txt", header = TRUE, sep = "\t")
+phylum_color <- read.table("data/fig2/phylum_color.txt", header = TRUE, sep = "\t", comment.char = "")
+
+meta <- meta[colnames(otu.table), ]
+otu.table_t <- as.data.frame(t(otu.table))
+Y <- ifelse(meta$organ_grp2 == "Skin", 0, 1)  
+prop.presence_raw <- colMeans(otu.table_t > 0)
+filter.out.otu <- which(prop.presence_raw < 0.2)
+
+if (length(filter.out.otu) > 0) {
+  otu.table.filter <- otu.table_t[, -filter.out.otu]
+  prop.presence_filtered <- prop.presence_raw[-filter.out.otu]
+} else {
+  otu.table.filter <- otu.table_t
+  prop.presence_filtered <- prop.presence_raw
+}
+res <- locom(otu.table = otu.table.filter, 
+             Y = Y, 
+             seed = 1, 
+             n.cores = 4, 
+             n.perm.max = 1000)
+w <- match(res$detected.otu, colnames(res$p.otu))
+o <- w[order(res$p.otu[w])]
+
+summary.table <- data.frame(
+  otu.name      = colnames(res$p.otu)[o],
+  mean.freq     = colMeans(otu.table_t / rowSums(otu.table_t))[o],
+  prop.presence = prop.presence_filtered[o],
+  p.value       = signif(res$p.otu[o], 3),
+  q.value       = signif(res$q.otu[o], 3),
+  effect.size   = signif(res$effect.size[o], 3),
+  stringsAsFactors = FALSE
+)
+
+label <- grep("s__", summary.table$otu.name)
+result <- summary.table[label, ]
+
+otu_norm <- t(otu.table + 1)
+otu_norm <- otu_norm / rowSums(otu_norm)
+data_norm <- as.data.frame(t(otu_norm))
+
+result_fc <- data.frame(matrix(ncol = 2, nrow = nrow(data_norm)))
+rownames(result_fc) <- rownames(data_norm)
+colnames(result_fc) <- c("Avg", "log2FC")
+
+for(i in 1:nrow(data_norm)){
+  v_gi   <- as.numeric(data_norm[i, meta$organ_grp2 == "GI"])
+  v_skin <- as.numeric(data_norm[i, meta$organ_grp2 == "Skin"])
+  m_gi   <- mean(v_gi)
+  m_skin <- mean(v_skin)
+  result_fc$Avg[i]    <- mean(as.numeric(data_norm[i, ]))
+  result_fc$log2FC[i] <- log2(m_gi / m_skin)
+}
+
+result$re     <- result_fc[result$otu.name, "Avg"]
+result$log2FC <- result_fc[result$otu.name, "log2FC"]
+
+figdata <- result
+figdata <- figdata[abs(figdata$log2FC) > 1, ]
+
+figdata$effect.size <- -figdata$effect.size
+figdata$log2FC <- -figdata$log2FC
+
+phylum_color$color[phylum_color$Phylum == "p__Ascomycota"] <- "black"
+use_tax <- tax[tax$Species %in% figdata$otu.name, ]
+use_tax$col <- phylum_color$color[match(use_tax$Phylum, phylum_color$Phylum)]
+
+rownames(use_tax) <- use_tax$Species
+use_tax <- use_tax[figdata$otu.name, ]
+figdata$col <- use_tax$col
+figdata$Group <- ifelse(figdata$log2FC > 0, "Skin", "GI")
+
+figdata <- figdata[order(figdata$effect.size), ]
+figdata$otu.name <- factor(figdata$otu.name, levels = figdata$otu.name)
+
+g3 <- ggplot(figdata, aes(x = otu.name, y = effect.size, fill = Group)) +
+  geom_col(width = 0.8) +
+  coord_flip() +
+  theme_classic() +
+  scale_fill_manual(values = c("Skin" = "#efa341", "GI" = "#1B9E77")) +
+  scale_y_continuous(limits = c(-6.5, 3.5), breaks = seq(-6, 2, 2)) +
+  labs(x = "", y = "Effect Size (LOCOM)") +
+  theme(
+    axis.text.y = element_text(colour = figdata$col, size = 6, face = "bold"),
+    axis.text.x = element_text(size = 8, color = "black"),
+    legend.position = "none",
+    axis.line.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+## Figure 2E. Differential abundance between upper GI and lower GI organs
+otu.table <- read.table("data/fig2/species_count.tsv", header = TRUE, sep = "\t", row.names = 1, check.names = FALSE)
+meta <- read.table("data/fig2/otu_alpha.txt", header = TRUE, sep = "\t", row.names = 1)
+
+meta <- meta[meta$organ_grp != "Skin", ]
+otu.table_subset <- otu.table[, rownames(meta)]
+otu.table_t <- as.data.frame(t(otu.table_subset))
+Y <- ifelse(meta$organ_grp == "GI_lower", 0, 1)
+prop.presence_raw <- colMeans(otu.table_t > 0)
+filter.out.otu <- which(prop.presence_raw < 0.2)
+
+if (length(filter.out.otu) > 0) {
+  otu.table.filter <- otu.table_t[, -filter.out.otu]
+  prop.presence_filtered <- prop.presence_raw[-filter.out.otu]
+} else {
+  otu.table.filter <- otu.table_t
+  prop.presence_filtered <- prop.presence_raw
+}
+res <- locom(otu.table = otu.table.filter, 
+             Y = Y, 
+             seed = 1, 
+             n.cores = 4, 
+             n.perm.max = 1000)
+w <- match(res$detected.otu, colnames(res$p.otu))
+o <- w[order(res$p.otu[w])]
+
+summary.table <- data.frame(
+  otu.name      = colnames(res$p.otu)[o],
+  mean.freq     = colMeans(otu.table_t / rowSums(otu.table_t))[o],
+  prop.presence = prop.presence_filtered[o],
+  p.value       = signif(res$p.otu[o], 3),
+  q.value       = signif(res$q.otu[o], 3),
+  effect.size   = signif(res$effect.size[o], 3),
+  stringsAsFactors = FALSE
+)
+label <- grep("s__", summary.table$otu.name)
+result <- summary.table[label, ]
+
+data_raw <- read.table("data/fig2/species_count.tsv",header = TRUE, sep = "\t", row.names = 1, check.names = FALSE)
+otu_norm <- t(data_raw + 1)
+otu_norm <- otu_norm / rowSums(otu_norm)
+data_norm <- as.data.frame(t(otu_norm))
+
+map <- read.table("data/fig2/otu_alpha.txt",header = TRUE, sep = "\t", row.names = 1)
+map <- map[colnames(data_norm), ]
+
+result_fc <- data.frame(matrix(ncol = 2, nrow = nrow(data_norm)))
+rownames(result_fc) <- rownames(data_norm)
+colnames(result_fc) <- c("Avg", "log2FC")
+
+for(i in 1:nrow(data_norm)){
+  v_upper <- as.numeric(data_norm[i, map$organ_grp == "GI_upper"])
+  v_lower <- as.numeric(data_norm[i, map$organ_grp == "GI_lower"])
+  m_upper <- mean(v_upper)
+  m_lower <- mean(v_lower)
+  result_fc$Avg[i]    <- mean(as.numeric(data_norm[i, ]))
+  result_fc$log2FC[i] <- log2(m_upper / m_lower)
+}
+
+result$re     <- result_fc[result$otu.name, "Avg"]
+result$log2FC <- result_fc[result$otu.name, "log2FC"]
+figdata <- result
+figdata <- figdata[abs(figdata$log2FC) > 1, ]
+
+figdata$effect.size <- -figdata$effect.size
+figdata$log2FC <- -figdata$log2FC
+tax <- read.table("data/fig2/phylum_species.txt", header = TRUE, sep = "\t")
+phylum_color <- read.table("data/fig2/phylum_color.txt", header = TRUE, sep = "\t", comment.char = "")
+phylum_color$color[phylum_color$Phylum == "p__Ascomycota"] <- "black"
+use_tax <- tax[tax$Species %in% figdata$otu.name, ]
+use_tax$col <- phylum_color$color[match(use_tax$Phylum, phylum_color$Phylum)]
+
+rownames(use_tax) <- use_tax$Species
+use_tax <- use_tax[figdata$otu.name, ]
+figdata$col <- use_tax$col
+figdata$Group <- ifelse(figdata$log2FC > 0, "GI_lower", "GI_upper")
+
+figdata <- figdata[order(figdata$effect.size), ]
+figdata$otu.name <- factor(figdata$otu.name, levels = figdata$otu.name)
+
+g4 <- ggplot(figdata, aes(x = otu.name, y = effect.size, fill = Group)) +
+  geom_col(width = 0.8) +
+  coord_flip() +
+  theme_classic() +
+  scale_fill_manual(values = c("GI upper" = "#1B9E77", "GI lower" = "#efa341")) +
+  scale_y_continuous(limits = c(-6.5, 3.5), breaks = seq(-6, 2, 2)) +
+  labs(x = "", y = "Effect Size (LOCOM)") +
+  theme(
+    axis.text.y = element_text(colour = figdata$col, size = 6, face = "bold"),
+    axis.text.x = element_text(size = 8, color = "black"),
+    legend.position = "none",
+    axis.line.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+## Figure 2F. Signature fungal taxa across different organs
+otu <- read.table("data/fig2/species_count.tsv", header = TRUE, sep = "\t", row.names = 1, check.names = FALSE)
+meta <- read.table("data/fig2/otu_alpha.txt", header = TRUE, sep = "\t", row.names = 1)
+tax <- read.table("data/fig2/tax_annotation.txt", header = TRUE, sep = "\t", row.names = 1)
+phylum_ref <- read.table("data/fig2/phylum_color.txt", header = TRUE, sep = "\t", comment.char = "")
+data <- read.table("data/fig2/BS_relab_tax.txt", header = TRUE, sep = "\t", row.names = 1, check.names = FALSE)
+
+meta <- meta[colnames(otu), ]
+all<-data.frame()
+site <- c("Skin", "OralCavity", "Esophagus", "Stomach", "SmallIntestine", "Appendix", "LargeIntestine")
+
+for(name in site){
+  Y <- ifelse(meta_raw$organ_grp2 == name, 0, 1) 
+  otu_t <- as.data.frame(t(otu))
+  prop_presence <- colMeans(otu_t > 0)
+  filter_idx <- which(prop_presence < 0.2)
+  if (length(filter_idx) > 0) {
+    otu_filter <- otu_t[, -filter_idx]
+    prop_presence_filtered <- prop_presence[-filter_idx]
+  } else {
+    otu_filter <- otu_t
+    prop_presence_filtered <- prop_presence
+  }
+  res <- locom(otu.table = otu_filter, 
+               Y = Y, 
+               seed = 1, 
+               n.cores = 4, 
+               n.perm.max = 1000) 
+  if (!is.null(res$detected.otu)) {
+    w <- match(res$detected.otu, colnames(res$p.otu))
+    o <- w[order(res$p.otu[w])]
+    summary_table <- data.frame(
+      otu.name      = colnames(res$p.otu)[o],
+      mean.freq     = colMeans(otu_t / rowSums(otu_t))[o],
+      prop.presence = prop_presence_filtered[o],
+      p.value       = signif(res$p.otu[o], 3),
+      q.value       = signif(res$q.otu[o], 3),
+      effect.size   = signif(res$effect.size[o], 3),
+      stringsAsFactors = FALSE
+    ) 
+    result <- summary_table[grep("s__", summary_table$otu.name), ]
+    fc_results <- data.frame(matrix(ncol = 2, nrow = nrow(data_norm)))
+    rownames(fc_results) <- rownames(data_norm)
+    colnames(fc_results) <- c("Avg", "log2FC")
+    data<-as.data.frame(t(otu))
+	data<-data/rowSums(data)
+	data<-as.data.frame(t(otu))
+    for(i in 1:nrow(data)){
+      v_current <- as.numeric(data[i, meta$organ_grp2 == name])
+      v_others  <- as.numeric(data[i, meta$organ_grp2 != name])
+      m_current <- mean(v_current)
+      m_others  <- mean(v_others)
+      fc_results$Avg[i]    <- mean(as.numeric(data[i, ]))
+	  fc_results$Pre[i]    <- sum(as.numeric(data[i, ] != 0) / length(as.numeric(data[i, ])
+      fc_results$log2FC[i] <- log2(m_current / m_others)
+    }
+    
+    result$re <- fc_results[result$otu.name, "Avg"]
+	result$Pre<- fc_results[result$otu.name, "Pre"]
+    result$log2FC <- fc_results[result$otu.name, "log2FC"]
+	result$site<-name
+    all<-rbind(all,result)
+	}
+}
+use_criteria <- all[all$Pre > 0.2 & all$log2FC > 2 & all$prop.presence > 0.2, ]
+use_data <- data[unique(use_criteria$otu.name), ]
+
+test <- t(scale(t(use_data)))
+test <- as.data.frame(test)
+col_fun <- colorRamp2(c(-1, 0, 2), c("#11A54C", "black", "#F21616"))
+
+group_order <- unique(use_criteria$subsite)
+taxid_ordered <- use_criteria$otu.name[order(factor(use_criteria$subsite, levels = group_order))]
+taxid_ordered <- intersect(taxid_ordered, rownames(tax))
+
+test_final <- test[taxid_ordered, group_order]
+use_tax <- tax[taxid_ordered, ]
+
+use_tax$phylum_col <- phylum_ref$color[match(use_tax$Phylum, phylum_ref$Phylum)]
+g5 <- Heatmap(as.matrix(test_final), 
+              name = "Z-score",
+              cluster_rows = FALSE, 
+              cluster_columns = FALSE, 
+              col = col_fun,
+              row_names_gp = gpar(fontsize = 6, col = use_tax$phylum_col), 
+              row_labels = rownames(use_tax),
+              column_names_gp = gpar(fontsize = 8),
+              column_names_side = "bottom",
+              show_column_names = TRUE,
+              heatmap_legend_param = list(
+                legend_direction = "horizontal",
+                title_position = "topcenter"
+              ),
+              width = unit(2.5, "cm"), 
+              height = unit(10, "cm") # Increased height for better readability
+)
+

@@ -1,0 +1,177 @@
+library(ComplexHeatmap)
+library(circlize)
+library(grid)
+## Function: Heatmap for subsite-specific taxa Figure4
+generate_heatmap <- function(data_path,order_path,re_cutoff = 0.0001,prev_cutoff = 0.1) {
+  ## Fixed annotation files (DO NOT CHANGE)
+  ##########################################################
+  name_path   <- "data/fig4/subsite_unique/name.txt"
+  tax_path    <- "data/fig4/subsite_unique/tax_annotation.txt"
+  phylum_path <- "data/fig4/subsite_unique/phylum_color.txt"
+  data <- read.table(data_path, header = TRUE, sep = "\t", row.names = 1)
+  ordername <- read.table(order_path, header = TRUE, sep = "\t")
+  use <- ordername[
+    ordername$re > re_cutoff & ordername$prop.presence > prev_cutoff,
+  ]
+  use$subsite<-factor(use$subsite,levels = unique(use$subsite))
+  use_data <- data[unique(use$otu.name)[order(use$subsite)], ]
+  test <- as.data.frame(t(scale(t(use_data))))
+  ## Color mapping
+  col_fun <- circlize::colorRamp2(
+    c(-1, 0, 1),
+    c("#11A54C", "black", "#F21616")
+  )
+  ## Load subsite naming
+  name <- read.table(name_path, header = TRUE, sep = "\t")
+  site <- intersect(name$Subsites, colnames(data))
+  use_name <- name[name$Subsites %in% site, ]
+  tax <- read.table(tax_path, header = TRUE, sep = "\t")
+  rownames(tax) <- tax$Tax
+  phylum <- read.table(phylum_path,header = TRUE,sep = "\t",comment.char = "")
+  use_tax <- tax[rownames(test), ]
+  ##########################################################
+  ## Assign phylum colors (safer version)
+  ##########################################################
+  use_tax$color <- NA
+  for (i in seq_len(nrow(use_tax))) {
+    value <- phylum[phylum$Phylum == use_tax$Phylum[i], ]$color
+    use_tax$color[i] <- value
+  }
+  ##########################################################
+  ## Reorder columns
+  ##########################################################
+  test <- test[, use_name$Subsites]
+  colnames(test) <- use_name$New.name
+  ##########################################################
+  ## Generate heatmap
+  ##########################################################
+  p <- Heatmap(
+    test,
+    cluster_rows = FALSE,
+    cluster_columns = FALSE,
+    col = col_fun,
+    
+    row_names_gp = gpar(fontsize = 6, col = use_tax$color),
+    column_names_gp = gpar(fontsize = 8),
+    column_names_side = "bottom",
+    
+    heatmap_legend_param = list(
+      legend_direction = "horizontal"
+    ),
+    
+    width = unit(2.5, "cm"),
+    height = unit(7, "cm"),
+    
+    row_labels = use_tax$Tax,
+    show_column_names = TRUE,
+    show_row_dend = FALSE
+  )
+  
+  return(p)
+}
+
+####Generate subsite unique tax heatmap
+files <- c("Skin","OralCavity","Esophagus","Stomach","SI_mucosa","SI_lumen","LI_mucosa","LI_lumen")
+g1<-list()
+for(name in files){
+  g1[[name]] <- generate_heatmap(
+    paste0("data/fig4/subsite_unique/", name, "_avg.txt"),
+    paste0("data/fig4/subsite_unique/", name, ".txt")
+  )
+}
+############################################################
+## Load required libraries
+############################################################
+library(ggplot2)
+library(ggstar)
+library(patchwork)
+library(grid)
+
+############################################################
+## Assume these objects already exist:
+## mds_point: data.frame with columns X1, X2, subsite, group
+## color_palette: named color vector
+############################################################
+
+############################################################
+## Function: PCoA plotting (reusable)
+############################################################
+plot_pcoa <- function(df, eig, color_var, ellipse_var, title, color_palette) {
+  # Calculate centroids (mean coordinates per group)
+  centroids <- aggregate(cbind(X1, X2) ~ group + subsite,
+                         data = df,
+                         FUN = mean)
+  # Build plot
+  p <- ggplot(df, aes(x = X1, y = X2)) +
+    geom_point(aes_string(color = color_var), size = 0.8) +
+    stat_ellipse(
+      aes_string(color = ellipse_var),
+      level = 0.5,
+      linewidth = 0.3,
+      geom = "polygon",
+      fill = NA,
+      alpha = 0.1
+    ) +
+    # Centroids
+    geom_star(
+      data = centroids,
+      aes(x = X1, y = X2,  fill = .data[[color_var]]),
+      size = 2.5,
+      starshape = 29,
+      color = "black"
+    ) +
+    labs(x = "PCoA 1", y = "PCoA 2", title = title) +
+    theme_bw() +
+    theme(
+      panel.background = element_blank(),
+      legend.position = "none"
+    ) +
+    scale_color_manual(values = color_palette) +
+    scale_fill_manual(values = color_palette)
+  
+  return(p)
+}
+
+############################################################
+## Define subsite groups 
+############################################################
+group1  <- c("skin","oralcavity","esophagus","stomach")
+group2 <- c("si_mucosa", "si_lumen", "li_mucosa","li_lumen")
+color_palette <- c("#EFA341", "#008000", "#810C02", "#B868FF", "#0433FF", 
+                   "#00CED1", "#C3247E", "#B7B5A0", "#452A3D", "#8AB07D","#742510")
+
+############################################################
+## Generate pcoa plot of subsites Figure4
+############################################################
+g2 <- list()
+
+# ---- First 4 subsites: use group-based coloring ----
+for (s in group1) {
+  f1<-paste("data/fig4/pcoa/",s,"_pcoa.txt",sep="")
+  df_sub <- read.table(f1,header = T,sep="")
+  
+  g2[[s]] <- plot_pcoa(
+    df = df_sub,
+    eig = eig,
+    color_var = "group",
+    ellipse_var = "group",
+    title = paste("PCoA -", s),
+    color_palette = color_palette
+  )
+}
+
+# ---- Last 3 subsites: use subsite-based coloring ----
+for (s in group2) {
+  f1<-paste("data/fig4/pcoa/",s,"_pcoa.txt",sep="")
+  df_sub <- read.table(f1,header = T,sep="")
+  
+  g2[[s]] <- plot_pcoa(
+    df = df_sub,
+    eig = eig,
+    color_var = "subsite",
+    ellipse_var = "group",
+    title = paste("PCoA -", s),
+    color_palette = color_palette
+  )
+}
+

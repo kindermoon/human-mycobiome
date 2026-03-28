@@ -1,0 +1,116 @@
+## Load required libraries
+library(ComplexHeatmap)
+library(circlize)
+library(grid)
+
+## Define body sites (fixed order for all plots)
+BS <- c("OralCavity", "Esophagus", "Stomach",
+        "DJ_M", "DJ_S",
+        "Ileum_M", "Ileum_S",
+        "Colon_R_M", "Colon_R_S",
+        "Colon_L_M", "Colon_L_S")
+
+## ---------------- POSITIVE EDGES -------------------------
+pos <- read.table("data/fig8/pos_unique.txt",
+                  header = TRUE, sep = "\t")
+value <- read.table("data/fig8/merge_edgelist.txt",
+                    header = TRUE, sep = "\t")
+# Extract matrix for heatmap (only selected body sites)
+use <- value[, 3:13]
+use <- use[, BS]
+rownames(use) <- paste(value$source, value$target, sep = ":")
+pos$Site <- factor(pos$Site, levels = BS)
+label <- pos$Edge[order(pos$Site)]
+use <- use[label, ]
+col_fun <- circlize::colorRamp2(
+  c(-0.7, 0, 0.7),
+  c("#006400", "white", "#99000D")
+)
+
+for (i in 1:nrow(pos)) {
+  temp <- use[pos$Edge[i], pos$Site[i]]
+  pos[i, 4] <- temp
+}
+
+colnames(pos)[4] <- "value"
+
+pos$Site <- factor(pos$Site, levels = BS)
+pos <- pos[order(pos$Site, pos$value, decreasing = FALSE), ]
+
+pos$num <- seq_len(nrow(pos))
+use_df <- pos[pos$value > 0.5, ]
+# Add row annotation (mark important edges)
+ra <- rowAnnotation(
+  foo = anno_mark(
+    at = round(use_df$num),
+    labels = use_df$Edge,
+    labels_gp = gpar(fontsize = 8)
+  )
+)
+# Reorder matrix based on sorted edges
+use <- use[pos$Edge, ]
+# Figure 8B. Co-abundance relationships across GI organs
+g_pos <- Heatmap(
+  use,
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  col = col_fun,
+  right_annotation = ra,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  width = unit(4, "cm"),
+  height = unit(12, "cm"),
+  show_heatmap_legend = FALSE
+)
+
+## ---------------- NEGATIVE EDGES -------------------------
+neg <- read.table("data/fig8/neg_unique.txt",
+                  header = TRUE, sep = "\t")
+value <- read.table("data/fig8/merge_edgelist.txt",
+                    header = TRUE, sep = "\t")
+use <- value[, 3:13]
+use <- use[, BS]
+# Construct edge identifiers
+rownames(use) <- paste(value$source, value$target, sep = ":")
+# Order edges by body site
+neg$Site <- factor(neg$Site, levels = BS)
+label <- neg$Edge[order(neg$Site)]
+use <- use[label, ]
+# Define color scale
+col_fun <- circlize::colorRamp2(
+  c(-0.7, 0, 0.7),
+  c("#006400", "white", "#99000D")
+)
+# Map corresponding value for each edge-site pair
+for (i in 1:nrow(neg)) {
+  temp <- use[neg$Edge[i], neg$Site[i]]
+  neg[i, 4] <- temp
+}
+colnames(neg)[4] <- "value"
+neg$Site <- factor(neg$Site, levels = rev(BS))
+neg <- neg[order(neg$Site, neg$value, decreasing = TRUE), ]
+neg$num <- seq_len(nrow(neg))
+# Select strong negative associations
+use_df <- neg[neg$value < -0.5, ]
+ra <- rowAnnotation(
+  foo = anno_mark(
+    at = round(use_df$num),
+    labels = use_df$Edge,
+    labels_gp = gpar(fontsize = 8)
+  )
+)
+# Reorder matrix
+use <- use[neg$Edge, ]
+# Figure 8B. Co-exclusive relationship across different GI organs
+g_neg <- Heatmap(
+  use,
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  col = col_fun,
+  right_annotation = ra,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  width = unit(4, "cm"),
+  height = unit(12, "cm"),
+  show_heatmap_legend = FALSE
+)

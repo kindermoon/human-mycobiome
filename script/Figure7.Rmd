@@ -1,0 +1,145 @@
+#!/usr/bin/env Rscript
+
+# Estimate the prevalence (across sample/subject) for GI organs 
+data<-read.table("Figure7 data/GI_species_frequency.txt",header = T,sep="\t",row.names = 1)
+
+col_fun = circlize::colorRamp2(c(0,16,33), c("white","#E9A8BB","#A10731"))
+####Figure7A
+g1<-Heatmap(t(data), name = "mat",  col = col_fun,
+            cell_fun = function(j, i, x, y, width, height, fill) {
+              if(t(data)[i, j] >= 16)
+                grid.points(x,y,pch=23,size = unit(1.5,"mm"),gp = gpar(fill = "#1A318BFF", col = "transparent",alpha=0.75))
+            },cluster_rows = F,cluster_columns = F)
+
+
+library(RColorBrewer)
+library(ggcor)
+library(presenter)
+label<-data.frame(BS=c("OralCavity","Esophagus","Stomach","Duodenum","SmallIntestine","Appendix","LargeIntestine"),Num=1:7)
+df<-data.frame()
+i<-1
+for(x in 1:6){
+  for(y in (x+1):7){
+    data<-read.table("Figure7 data/correlation.txt",header = T,sep="\t")
+    use<-data[data$Site1 == label$BS[x] & data$Site2 == label$BS[y],]
+    use<-use[!is.na(use$Pearsonpvalue),]
+    num<-length(rownames(use)[use$Spearmanpvalue < 0.05 & use$Spearmancor >0])
+    ratio<-num/88
+    df[i,1]<-label$BS[x]
+    df[i,2]<-label$BS[y]
+    df[i,3]<-ratio
+    df[i,4]<-label$Num[x]
+    df[i,5]<-label$Num[y]
+    i<-i+1
+    df[i,1]<-label$BS[y]
+    df[i,2]<-label$BS[x]
+    df[i,3]<-ratio
+    df[i,4]<-label$Num[y]
+    df[i,5]<-label$Num[x]
+    i<-i+1
+  }
+}
+colnames(df)<-c("x","y","r","xid","yid")
+
+fig<-data.frame()
+for(x in 1:7){
+  for(y in 1:7){
+    if(x == y){
+      fig[x,y]<-1
+    }else{
+      fig[x,y]<-df$r[df$xid ==x & df$yid ==y]
+    }
+    
+  }
+}
+colnames(fig)<-label$BS
+rownames(fig)<-label$BS
+use<-cor_tbl(fig)
+coul <- colorRampPalette(brewer.pal(9, "OrRd"))(50)
+###Figure7B Left
+g2<-quickcor(use,type="lower")+geom_square()+geom_number(aes(num = r), colour = "black", size = 2.5)+scale_fill_gradient2n(limits = c(0,1),colours = coul)
+
+# Load data
+fig <- read.table("Figure7 data/geom_line_fig.txt", header = TRUE, sep = "\t")
+
+# Remove Skin samples
+fig <- fig %>% filter(site != "Skin")
+
+# Define ordered factor levels for x-axis
+fig$site <- factor(fig$site,
+                   levels = c("OralCavity","Esophagus","Stomach",
+                              "Duodenum","SmallIntestine",
+                              "Appendix","LargeIntestine"))
+###Figure7B Right
+g3<-list()
+# ---------------- p1 ----------------
+# Use all sites for both points and lines
+g3[[1]] <- ggplot(fig, aes(x = site, y = zotus24)) +
+  geom_point(shape = 21) +  # Plot all points
+  geom_line(aes(group = subject,color=subject), linetype = 2) +  # Each subject is connected as one line
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "Relative Abundance",
+       title = "s__Kluyveromyces_marxianus") +
+  scale_x_discrete(labels = c("O","E","S","D","SI","APP","LI"))
+
+# ---------------- p2 ----------------
+# Subset only the first three sites for line connections
+df2 <- fig %>% filter(site %in% c("OralCavity","Esophagus","Stomach"))
+
+g3[[2]]  <- ggplot(fig, aes(x = site, y = zotus46)) +
+  geom_point(shape = 21) +  # Plot all points
+  geom_line(data = df2, aes(group = subject,color=subject), linetype = 2) +  # Only connect selected sites
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "Relative Abundance",
+       title = "s__Fusarium_chlamydosporum") +
+  scale_x_discrete(labels = c("O","E","S","D","SI","APP","LI"))
+
+# ---------------- p3 ----------------
+# Subset only the last three sites for line connections
+df3 <- fig %>% filter(site %in% c("Appendix","SmallIntestine","LargeIntestine"))
+
+g3[[3]]  <- ggplot(fig, aes(x = site, y = zotus77)) +
+  geom_point(shape = 21) +  # Plot all points
+  geom_line(data = df3, aes(group = subject,color=subject), linetype = 2) +  # Only connect selected sites
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "Relative Abundance",
+       title = "g__Filobasidium;s__") +
+  scale_x_discrete(labels = c("O","E","S","D","SI","APP","LI"))
+###Figure7C Left
+upper<-read.table("Figure7 data/upper.txt",header = T,sep="\t",row.names = 1)
+oral<-read.table("Figure7 data/GI_species_frequency.txt",header = T,sep="\t",row.names = 1)
+oral<-oral[rownames(upper),]
+oral<-oral/33
+col_fun = circlize::colorRamp2(c(0,1,2,3), c("white","#FF8080","#FF0000","#FF0000"))
+col_fun1= circlize::colorRamp2(c(0,1), c("white","#666666"))
+pre<-data.frame()
+for(i in 1:length(rownames(upper))){
+  value<-as.numeric(upper[i,])
+  v<-value[value != 0]
+  pre[i,1]<-rownames(upper)[i]
+  pre[i,2]<-length(v)/length(value)
+}
+ha<-rowAnnotation(barplot = anno_barplot(pre$V2))
+ha1 = rowAnnotation(df = oral$OralCavity,col=list(df=col_fun1))
+g4<-Heatmap(upper,cluster_rows = F,cluster_columns = F,col=col_fun,show_column_dend = F,show_column_names = F,show_row_names = T,show_heatmap_legend = F,right_annotation = ha,left_annotation = ha1)
+
+###Figure7C Right
+lower<-read.table("Figure7 data/lower.txt",header = T,sep="\t",row.names = 1)
+oral<-read.table("Figure7 data/GI_species_frequency.txt",header = T,sep="\t",row.names = 1)
+oral<-oral[rownames(lower),]
+oral<-oral/33
+col_fun = circlize::colorRamp2(c(0,1,2,3), c("white","#FF8080","#FF0000","#FF0000"))
+col_fun1= circlize::colorRamp2(c(0,1), c("white","#666666"))
+pre<-data.frame()
+for(i in 1:length(rownames(lower))){
+  value<-as.numeric(lower[i,])
+  v<-value[value != 0]
+  pre[i,1]<-rownames(lower)[i]
+  pre[i,2]<-length(v)/length(value)
+}
+ha<-rowAnnotation(barplot = anno_barplot(pre$V2))
+ha1 = rowAnnotation(df = oral$OralCavity,col=list(df=col_fun1))
+g5<-Heatmap(lower,cluster_rows = F,cluster_columns = F,col=col_fun,show_column_dend = F,show_column_names = F,show_row_names = T,show_heatmap_legend = F,right_annotation = ha,left_annotation = ha1)

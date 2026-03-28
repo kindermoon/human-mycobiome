@@ -1,0 +1,462 @@
+
+
+## Load required packages
+library(pheatmap)
+library(reshape2)
+library(ggplot2)
+library(dplyr)
+library(ComplexHeatmap)
+library(stringr)
+
+## Fig1A. Mean relative abundance of main fungal phylum across body regions
+phylum_data <- read.table("data/fig1/phylum_relab.txt", header = T, sep = "\t", row.names = 1, check.names = F)
+meta_data <- read.table("data/metadata_filtered.tsv", header = T, sep = "\t", row.names = 1)
+plot_data <- t(phylum_data) %>%
+  as.data.frame() %>%
+  mutate(SampleID = rownames(.)) %>%
+  inner_join(mutate(meta_data, SampleID = rownames(meta_data)), by = "SampleID") %>%
+  group_by(BS) %>%
+  summarise(across(rownames(phylum_data), mean), .groups = 'drop')
+plot_df <- melt(plot_data, id.vars = "BS", variable.name = "Phylum", value.name = "Abundance")
+phylum_cols <- c(
+  "Ascomycota"       = "#7C8558",
+  "Basidiomycota"    = "#CDCC00",
+  "Mucoromycota"     = "#015CB7",
+  "Mortierellomycota" = "#7E0001",
+  "Glomeromycota"    = "#FCB462",
+  "Chytridiomycota"  = "#2DC937"
+)
+
+site_order <- c("Skin", "Oral Cavity", "Esophagus", "Stomach", "Small Intestine", "Appendix", "Large Intestine")
+plot_df$BS <- factor(plot_df$BS, levels = site_order)
+
+g1 <- ggplot(plot_df, aes(x = BS, y = Abundance * 100, fill = Phylum)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.8, color = "white", size = 0.2) +
+  labs(x = "", y = "Relative Abundance%", fill = NULL) +
+  scale_fill_manual(values = phylum_cols) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 100.1)) +
+  theme_bw()+theme(
+  panel.grid = element_blank(),
+  panel.border = element_rect(color = "black", fill = NA, size = 1),
+  axis.line = element_blank(),
+  axis.ticks = element_line(color = "black"),
+  axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, color = "black", size = 10),
+  axis.text.y = element_text(color = "black", size = 10),
+  axis.title.y = element_text(size = 12, face = "plain"),
+  legend.text = element_text(size = 9, face = "italic"), # Italicize Latin names
+  legend.key.size = unit(0.4, "cm"),
+  legend.position = "right")
+
+
+## Figure 1B. Relative abundance of top 10 most abundant fungal genera across diverse regions
+data <- read.table("data/fig1/genus_relab.txt", header = T, sep = "\t", row.names = 1)
+map <- read.table("data/metadata_filtered.tsv", header = T, sep = "\t", row.names = 1)
+site <- unique(map$BS)
+genus <- data.frame()
+use_map <- map[map$BS == name, ] # Note: 'name' relies on existing environment or previous loop, kept as original
+use_data <- data[, rownames(use_map)]
+use_data$mean <- rowSums(use_data) / length(rownames(use_map))
+genus[1:10, 1] <- rownames(use_data)[order(use_data$mean, decreasing = T)][1:10]
+
+for(name in site){
+  use_map <- map[map$BS == name, ]
+  use_data <- data[, rownames(use_map)]
+  use_data$mean <- rowSums(use_data) / length(rownames(use_map))
+  genus <- cbind(genus, rownames(use_data)[order(use_data$mean, decreasing = T)][1:10])
+}
+genus <- unique(genus)
+use_data <- data[genus, ]
+
+skin_map <- map[map$BS == "Skin", ]
+skin <- use_data[, rownames(skin_map)]
+
+use <- skin
+col <- colnames(use)
+len_col <- length(col)
+row <- rownames(use)
+len_row <- length(row)
+test <- as.data.frame(NULL)
+
+for(i in 1:len_row){
+  mapping <- as.matrix(use[i, ])
+  avg <- mean(mapping)
+  var <- sd(mapping)
+  for(x in 1:len_col){
+    value <- use[i, x]
+    use_value <- (value - avg) / var
+    test[i, x] <- use_value
+  }
+}
+colnames(test) <- colnames(use)
+rownames(test) <- rownames(use)
+datat <- test
+datat[datat > 1] <- 1
+
+o <- pheatmap(skin)
+order <- o$tree_col$order
+skinname <- colnames(skin)[order]
+skin_use <- skin[, skinname]
+skin_fig <- as.data.frame(t(skin_use))
+skin_fig$ID <- rownames(skin_fig)
+
+skin_figdata <- melt(skin_fig, id = "ID")
+ggplot(data = skin_figdata, aes(ID, weight = value, color = variable)) + 
+  geom_bar(position = "stack", width = 1, alpha = 0.01)
+
+oral_map <- map[map$BS == "OralCavity", ]
+oral <- use_data[, rownames(oral_map)]
+
+use <- oral
+col <- colnames(use)
+len_col <- length(col)
+row <- rownames(use)
+len_row <- length(row)
+
+o <- pheatmap(oral)
+order <- o$tree_col$order
+oralname <- colnames(oral)[order]
+oral_use <- oral[, oralname]
+oral_fig <- as.data.frame(t(oral_use))
+oral_fig$ID <- rownames(oral_fig)
+
+oral_figdata <- melt(oral_fig, id = "ID")
+ggplot(data = oral_figdata, aes(ID, weight = value, color = variable)) + 
+  geom_bar(position = "stack", width = 1, alpha = 0.01)
+
+esophagus_map <- map[map$BS == "Esophagus", ]
+esophagus <- use_data[, rownames(esophagus_map)]
+
+use <- esophagus
+col <- colnames(use)
+len_col <- length(col)
+row <- rownames(use)
+len_row <- length(row)
+test <- as.data.frame(NULL)
+
+for(i in 1:len_row){
+  mapping <- as.matrix(use[i, ])
+  avg <- mean(mapping)
+  var <- sd(mapping)
+  for(x in 1:len_col){
+    value <- use[i, x]
+    use_value <- (value - avg) / var
+    test[i, x] <- use_value
+  }
+}
+colnames(test) <- colnames(use)
+rownames(test) <- rownames(use)
+datat <- test
+datat[datat > 1] <- 1
+
+o <- pheatmap(esophagus)
+order <- o$tree_col$order
+esophagusname <- colnames(esophagus)[order]
+esophagus_use <- esophagus[, esophagusname]
+esophagus_fig <- as.data.frame(t(esophagus_use))
+esophagus_fig$ID <- rownames(esophagus_fig)
+
+esophagus_figdata <- melt(esophagus_fig, id = "ID")
+ggplot(data = esophagus_figdata, aes(ID, weight = value, color = variable)) + 
+  geom_bar() # Fixed missing parentheses here
+
+stomach_map <- map[map$BS == "Stomach", ]
+stomach <- use_data[, rownames(stomach_map)]
+
+use <- stomach
+col <- colnames(use)
+len_col <- length(col)
+row <- rownames(use)
+len_row <- length(row)
+test <- as.data.frame(NULL)
+
+for(i in 1:len_row){
+  mapping <- as.matrix(use[i, ])
+  avg <- mean(mapping)
+  var <- sd(mapping)
+  for(x in 1:len_col){
+    value <- use[i, x]
+    use_value <- (value - avg) / var
+    test[i, x] <- use_value
+  }
+}
+colnames(test) <- colnames(use)
+rownames(test) <- rownames(use)
+datat <- test
+datat[datat > 1] <- 1
+
+o <- pheatmap(stomach)
+order <- o$tree_col$order
+stomachname <- colnames(stomach)[order]
+stomach_use <- stomach[, stomachname]
+stomach_fig <- as.data.frame(t(stomach_use))
+stomach_fig$ID <- rownames(stomach_fig)
+
+stomach_figdata <- melt(stomach_fig, id = "ID")
+ggplot(data = stomach_figdata, aes(ID, weight = value, color = variable)) + 
+  geom_bar(position = "stack", width = 1, alpha = 0.01)
+
+small_map <- map[map$BS == "SmallIntestine", ]
+small <- use_data[, rownames(small_map)]
+
+use <- small
+col <- colnames(use)
+len_col <- length(col)
+row <- rownames(use)
+len_row <- length(row)
+test <- as.data.frame(NULL)
+
+for(i in 1:len_row){
+  mapping <- as.matrix(use[i, ])
+  avg <- mean(mapping)
+  var <- sd(mapping)
+  for(x in 1:len_col){
+    value <- use[i, x]
+    use_value <- (value - avg) / var
+    test[i, x] <- use_value
+  }
+}
+colnames(test) <- colnames(use)
+rownames(test) <- rownames(use)
+datat <- test
+datat[datat > 1] <- 1
+
+o <- pheatmap(small)
+order <- o$tree_col$order
+smallname <- colnames(small)[order]
+small_use <- small[, smallname]
+small_fig <- as.data.frame(t(small_use))
+small_fig$ID <- rownames(small_fig)
+
+small_figdata <- melt(small_fig, id = "ID")
+small_figdata$ID <- factor(small_figdata$ID, levels = smallname)
+ggplot(data = small_figdata, aes(ID, weight = value, color = variable)) + 
+  geom_bar(position = "stack", width = 1, alpha = 0.01)
+
+large_map <- map[map$BS == "LargeIntestine", ]
+large <- use_data[, rownames(large_map)]
+
+use <- large
+col <- colnames(use)
+len_col <- length(col)
+row <- rownames(use)
+len_row <- length(row)
+test <- as.data.frame(NULL)
+
+for(i in 1:len_row){
+  mapping <- as.matrix(use[i, ])
+  avg <- mean(mapping)
+  var <- sd(mapping)
+  for(x in 1:len_col){
+    value <- use[i, x]
+    use_value <- (value - avg) / var
+    test[i, x] <- use_value
+  }
+}
+colnames(test) <- colnames(use)
+rownames(test) <- rownames(use)
+datat <- test
+datat[datat > 1] <- 1
+
+o <- pheatmap(large)
+order <- o$tree_col$order
+largename <- colnames(large)[order]
+large_use <- large[, largename]
+large_fig <- as.data.frame(t(large_use))
+large_fig$ID <- rownames(large_fig)
+
+large_figdata <- melt(large_fig, id = "ID")
+ggplot(data = large_figdata, aes(ID, weight = value, color = variable)) + 
+  geom_bar(position = "stack", width = 1, alpha = 0.01)
+
+appendix_map <- map[map$BS == "Appendix", ]
+appendix <- use_data[, rownames(appendix_map)]
+
+use <- appendix
+col <- colnames(use)
+len_col <- length(col)
+row <- rownames(use)
+len_row <- length(row)
+test <- as.data.frame(NULL)
+
+for(i in 1:len_row){
+  mapping <- as.matrix(use[i, ])
+  avg <- mean(mapping)
+  var <- sd(mapping)
+  for(x in 1:len_col){
+    value <- use[i, x]
+    use_value <- (value - avg) / var
+    test[i, x] <- use_value
+  }
+}
+colnames(test) <- colnames(use)
+rownames(test) <- rownames(use)
+datat <- test
+datat <- datat[-which(rownames(datat) == "Actinomucor"), ] # Fixed syntax for dropping row
+datat[datat > 0.9] <- 0.9
+
+o <- pheatmap(appendix)
+order <- o$tree_col$order
+appendixname <- colnames(appendix)[order]
+appendix_use <- appendix[, appendixname]
+appendix_fig <- as.data.frame(t(appendix_use))
+appendix_fig$ID <- rownames(appendix_fig)
+
+appendix_figdata <- melt(appendix_fig, id = "ID")
+ggplot(data = appendix_figdata, aes(ID, weight = value, color = variable)) + 
+  geom_bar(position = "stack", width = 1, alpha = 0.01)
+
+trans.arcsine <- function(x){
+  asin(sign(x) * sqrt(abs(x)))
+}
+
+finalorder <- c(skinname, oralname, esophagusname, stomachname, smallname, appendixname, largename)
+use_data <- trans.arcsine(use_data)
+cosist_fig <- use_data[, finalorder]
+consist_fig <- as.data.frame(t(cosist_fig))
+consist_fig$ID <- rownames(consist_fig)
+
+attach(consist_fig)
+fit1 <- lpridge(name, consist_fig[, 1], bandw = 25, ridge = 0)
+fit2 <- lpridge(name, consist_fig[, 2], bandw = 25, ridge = 0)
+fit3 <- lpridge(name, consist_fig[, 3], bandw = 25, ridge = 0)
+fit4 <- lpridge(name, consist_fig[, 4], bandw = 25, ridge = 0)
+fit5 <- lpridge(name, consist_fig[, 5], bandw = 25, ridge = 0)
+fit6 <- lpridge(name, consist_fig[, 6], bandw = 25, ridge = 0)
+
+linedata <- data.frame()
+i <- 1
+fit <- lpridge(name, consist_fig[, i], bandw = 25, ridge = 0)
+linedata[1:200, 1] <- fit$est
+
+for(i in 2:21){
+  fit <- lpridge(name, consist_fig[, i], bandw = 25, ridge = 0)
+  linedata <- cbind(linedata, fit$est)
+}
+linedata$ID <- fit$x.out
+
+linedata$A1 <- linedata$Malassezia + linedata$Alternaria
+linedata$C1 <- linedata$Cladosporium + linedata$Alternaria + linedata$Malassezia
+linedata$S1 <- linedata$Cladosporium + linedata$Alternaria + linedata$Malassezia + linedata$Saccharomyces
+linedata$C2 <- linedata$Cladosporium + linedata$Alternaria + linedata$Malassezia + linedata$Saccharomyces + linedata$Candida
+
+consist_figdata <- melt(linedata, id = "ID")
+consist_figdata$ID <- factor(consist_figdata$ID, levels = finalorder)
+
+figdata<-melt(linedata,id="ID")
+genus_cols <- c(
+  "Candida"           = "#7E0001",
+  "Cladosporium"      = "#7C8558",
+  "Saccharomyces"     = "#015CB7",
+  "Alternaria"        = "#FCB462",
+  "Aspergillus"       = "#D5A021",
+  "Talaromyces"       = "#EEECC5",
+  "Pseudogymnoascus"  = "#4D5D53",
+  "Fusarium"          = "#2DC937",
+  "Malassezia"        = "#CDCC00",
+  "Wallemia"          = "#9E3D64"
+)
+g2<-ggplot(data=figdata) + 
+	geom_ribbon(aes(x=ID,y=value, ymin=0, ymax=value,fill=variable)) +
+	geom_vline(xintercept = 328) +
+        geom_vline(xintercept = 526) +
+	geom_vline(xintercept = 636) +
+	geom_vline(xintercept = 786) +
+	geom_vline(xintercept = 1149) + 
+	geom_vline(xintercept = 1608) +
+	theme_bw() +
+	theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank()) + 
+	scale_x_continuous(expand = c(0,0)) +
+	scale_fill_manual(values = genus_color)
+
+## Figure 1C. Heatmap depicts the distribution of core fungal genera across different organs
+abu <- read.table("data/fig1/genus_count.tsv",header=T,sep="\t",row.names=1)
+mapping <- read.table("data/metadata_filtered.tsv",header=T,sep="\t",row.names=1)
+taxonomy <- read.table("data/fig1/taxonomy_filtered_fmt.tsv",header=T,sep="\t",row.names=1)
+abu <- abu[!(row.names(abu) == "k__Fungi"),]
+BSlist <- c("Skin","OralCavity","Esophagus","Stomach","SmallIntestine","Appendix","LargeIntestine")
+BScolor <- c("#EFA341","#008000","#810C02","#B868FF","#0433FF","#00CED1","#C3247E")
+
+core <- list()
+prev_rank <- data.frame()
+taxa_abu <- data.frame(matrix(NA,nrow=6,ncol=length(BSlist)))
+taxa_strata <- c("core","common","rare")
+taxa_num <- c("core.num","common.num","rare.num")
+rownames(taxa_abu) <- c(taxa_strata,taxa_num)
+colnames(taxa_abu) <- BSlist
+
+for (i in 1:length(BSlist)) {
+        message(paste("Performing analysis for: ",BSlist[i],sep=""))
+        samp <- rownames(mapping[mapping$BS==BSlist[i],])
+        data <- abu[,samp]
+	temp <- data.frame(BS=BSlist[i],
+                           prev=apply(data,1,function(x){mean(sum(x>0))/ncol(data)}),
+                           relab=rowSums(data)/sum(rowSums(data))*100,
+                           taxon=rownames(abu))
+	temp$types <- ifelse(temp$prev > 0.8,"core",ifelse(temp$prev<0.2,"rare","common"))
+	core[[i]] <- as.character(temp[temp$types=="core",]$taxon)
+	temp <- temp %>% arrange(desc(prev)) 
+	df <- data.frame(BS=BSlist[i],id=1:100,prev=temp$prev[1:100])
+	prev_rank <- rbind(prev_rank,df)
+	temp$types <- factor(temp$types,levels=taxa_strata)
+	taxa_abu[1:3,i] <- aggregate(temp$relab,list(temp$types),FUN=sum)[2]
+        taxa_abu[4:6,i] <- table(temp$types)
+}
+names(core) <- BSlist
+
+taxaList <- unique(unlist(core))
+taxa_pat <- data.frame(matrix(NA,nrow=length(taxaList),ncol=length(BSlist)))
+rownames(taxa_pat) <- taxaList
+colnames(taxa_pat) <- BSlist
+for (i in 1:length(taxaList)) {
+        tax <- taxaList[i]
+        for (j in 1:length(BSlist)) {
+                taxa_pat[i,j] <- ifelse(tax %in% core[[j]],1,0)
+        }
+}
+taxa_pat <- taxa_pat[order(-rowSums(taxa_pat)),]
+mycolor <- structure(c("black","yellow"),names=c("0","1"))
+g3 <- Heatmap(as.matrix(t(taxa_pat)),
+              name="Core microbiome",
+              col=mycolor,
+              rect_gp=gpar(col="gray",lwd=0.5),
+              cluster_rows=FALSE,
+              cluster_columns=FALSE,
+              row_names_side="left",
+              row_names_gp=gpar(fontsize=10),
+              column_names_gp=gpar(fontsize=10),
+              column_names_rot=45)
+
+## Figure 1D. Accumlated abundance of fungal genera with different categories across different organs
+df <- as.data.frame(t(taxa_abu[1:3,]))
+df$BS <- rownames(df)
+df_long <- melt(df,id.vars="BS",variable.name="taxa_grp",value.name="relab")
+df_long$BS <- factor(df_long$BS,levels=BSlist)
+df_long$taxa_grp <- factor(df_long$taxa_grp,levels=c("core","common","rare"))
+mytheme <- theme_classic() +
+        theme(axis.line=element_blank(),
+              axis.text=element_blank(),
+              axis.ticks=element_blank(),
+              legend.position="none")
+## barchart
+p1 <- ggplot(df_long,aes(x="",y=relab,fill=taxa_grp)) +
+        geom_bar(stat="identity",width=1,color="black",linewidth=0.2) +
+        coord_polar("y",start=0) +
+        geom_text(aes(label=paste(round(relab,1),"%")),size=3,position=position_stack(vjust=0.5)) +
+        labs(x=NULL,y=NULL,fill=NULL) +
+        scale_fill_brewer(palette="Blues") +
+	mytheme + facet_grid(.~BS)
+
+## Stacked barplot
+count <- as.data.frame(t(taxa_abu[4:6,]))
+count$BS <- rownames(count)
+count_long <- melt(count,id.vars="BS",variable.name="taxa_grp",value.name="taxa_num")
+count_long$BS <- factor(count_long$BS,levels=BSlist)
+count_long$taxa_grp <- factor(count_long$taxa_grp,levels=c("core.num","common.num","rare.num"))
+p2 <- ggplot(count_long,aes(x=BS,y=taxa_num,fill=taxa_grp)) +
+        geom_bar(stat="identity",color="black",width=0.6) +
+        scale_fill_brewer(palette="Blues") +
+        guides(fill=guide_legend(title="Genera category")) +
+        labs(x="",y="Genera number") +
+        scale_y_continuous(expand=c(0,0),limits=c(0,1500)) +
+        theme_classic() +
+        theme(axis.text.x=element_text(size=12,angle=45,vjust=1,hjust=1))

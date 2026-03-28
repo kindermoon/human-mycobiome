@@ -1,0 +1,88 @@
+############################################################
+## Load required libraries
+############################################################
+library(ComplexHeatmap)
+library(ggplot2)
+library(ggsci)
+library(sf)
+library(ggVennDiagram)
+library(reshape2)   # for melt function
+library(grid)       # for gpar
+
+## Figure 3A. Heatmap of GI tax prevalence
+data <- read.table("data/fig3/heatmap.txt",header=TRUE,sep="\t",row.names=1)
+g1 <- Heatmap(
+  as.matrix(data),
+  name = "Z-score",
+  cluster_columns = FALSE,     # Keep original sample order
+  show_row_names = FALSE,      # Hide row names for dense data
+  column_names_gp = gpar(fontsize = 8),
+  heatmap_legend_param = list(
+    legend_direction = "horizontal",
+    title_position = "topcenter"
+  )
+)
+
+## Figure 3C. Distributio of common fungal taxa across GI mucosa
+label  <- read.table("data/fig3/label.txt",header = TRUE,sep = "\t",row.names=1)
+common <- read.table("data/fig3/common_sta.txt",header=TRUE,row.names = 1)
+
+common$tax <- rownames(common)
+common$Color <- label[common$tax, ]
+common_fig <- melt(common)
+common_fig$Shape <- cut(
+  common_fig$value,
+  breaks = c(0.5, 0.7, 0.75, 0.85, 0.95, Inf),
+  labels = c("Shape1", "Shape2", "Shape3", "Shape4", "Shape5"),
+  right = FALSE
+)
+
+common_fig$tax <- factor(common_fig$tax, levels = rownames(common))
+common_fig$variable <- factor(
+  common_fig$variable,
+  levels = c("LargeIntestine", "SmallIntestine", "Stomach", "Esophagus", "OralCavity")
+)
+g2 <- ggplot(common_fig, aes(x = tax, y = variable)) +
+  geom_point(aes(size = Shape, color = variable)) +
+  scale_color_manual(
+    values = rev(c("#008000", "#810C02", "#B868FF", "#0433FF", "#C3247E"))
+  ) +
+  scale_size_manual(values = c(0.5, 1, 2, 2.5, 4, 6, 8, 9)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0),
+    legend.position = "none"
+  ) +
+  labs(x = "", y = "")
+
+## Figure 3D. Distributio of unique fungal taxa across GI mucosa
+unique <- read.table("data/fig3/unique_sta.txt",header=TRUE,row.names=1)
+unique$tax <- rownames(unique)
+unique$Color <- label[unique$tax, ]
+unique_fig <- melt(unique)
+unique_fig$Shape <- cut(
+  unique_fig$value,
+  breaks = c(0.2, 0.3, 0.4, 0.5, Inf),
+  labels = c("Shape1", "Shape2", "Shape3", "Shape4"),
+  right = FALSE
+)
+unique_fig$variable <- as.character(unique_fig$variable)
+unique_fig$fill <- unique_fig$variable
+unique_fig$fill[unique_fig$variable != unique_fig$Color] <- "Others"
+
+unique_fig$tax <- factor(unique_fig$tax, levels = rownames(unique))
+unique_fig$variable <- factor(
+  unique_fig$variable,
+  levels = rev(c("LargeIntestine", "SmallIntestine", "Stomach", "Esophagus", "OralCavity"))
+)
+
+g3 <- ggplot(unique_fig, aes(x = variable, y = tax)) +
+  geom_point(aes(size = Shape, color = fill)) +
+  scale_color_manual(values = c("#C3247E", "#008000", "#666666", "#0433FF")) +
+  scale_size_manual(values = c(0.5, 1, 2, 2.5, 4, 6, 8, 9)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    legend.position = "none"
+  ) +
+  labs(x = "", y = "")

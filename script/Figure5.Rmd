@@ -1,0 +1,132 @@
+## 1. Data Loading
+data<-read.table("data/fig5/otu_norm.txt",header = T,sep="\t",row.names = 1)
+map<-read.table("data/fig5/otu_alpha.txt",header = T,sep="\t",row.names = 1)
+target_sites <- c("Stomach", "SmallIntestine", "LargeIntestine")
+## 2. Define Target Sites
+# Define the body sites to be processed in the loop
+target_bs <- c("Stomach", "SmallIntestine", "LargeIntestine")
+g1<-list()
+## 3. Batch PCoA Processing Loop
+for (bs_name in target_bs) {
+  message(">>> Processing PCoA for site: ", bs_name)
+  library(vegan)
+  # Filter metadata for the current body site
+  use_map <- map[map$BS == bs_name, ]
+  
+  if (nrow(use_map) == 0) {
+    warning(paste("No data found for site:", bs_name))
+    next
+  }
+  
+  use_data <- data[, rownames(use_map)]
+  otus <- as.data.frame(t(use_data))
+  dist_mat <- as.matrix(vegdist(otus, method = 'bray', binary = F))
+  pcoa_res <- cmdscale(dist_mat, k = 3, eig = T)
+  mds_point <- data.frame(pcoa_res$points)
+  colnames(mds_point) <- c("X1", "X2", "X3")
+  eig <- pcoa_res$eig # Eigenvalues for variance explanation
+  mds_point$Group <- use_map$pair_grp
+  mds_point$site  <- use_map$site
+  # Ensure "mucosa" is the first level and "lumen" is the second for consistent coloring
+  grps <- unique(mds_point$Group)
+  mucosa_label <- grps[grepl("mucosa", grps, ignore.case = T)]
+  lumen_label  <- grps[grepl("lumen", grps, ignore.case = T)]
+  mds_point$Group <- factor(mds_point$Group, levels = rev(c(mucosa_label, lumen_label)))
+  g <- ggplot(mds_point, aes(x = X1, y = X2, col = Group)) +
+    # Points with shapes mapped to 'site'
+    geom_point(alpha = 0.8, size = 2, stroke = 0.2, aes(shape = site)) +
+    stat_ellipse(level = 0.65, lwd = 0.3, aes(col = Group)) +
+    scale_color_manual(values = c("#065535", "#f2622a")) +
+    scale_shape_manual(values = c(16, 17, 15, 18, 3, 4, 8, 1, 2)) +
+    theme_bw() +
+    theme(
+      panel.grid = element_blank(),
+      axis.text = element_text(size = 8, color = "black"),
+      axis.title = element_text(color = 'black', size = 9),
+      legend.position = "none" 
+    ) +
+    # Dynamic labels with variance percentage
+    labs(
+      x = paste0("PCoA 1 (", format(100 * eig[1] / sum(eig), digits = 4), "%)"),
+      y = paste0("PCoA 2 (", format(100 * eig[2] / sum(eig), digits = 4), "%)"),
+      title = paste("PCoA analysis -", bs_name)
+    )
+  g1[[bs_name]]<-g
+}
+plot_locom_bar <- function(locom_file){
+  
+  library(ggplot2)
+  library(dplyr)
+  
+  # -------------------------------
+  # 1. Read LOCOM result table
+  # -------------------------------
+  data <- read.table(locom_file,
+                     header = TRUE,
+                     sep = "\t",
+                     check.names = FALSE,
+                     comment.char = "")
+  
+  # -------------------------------
+  # 2. Filter significant features
+  # -------------------------------
+  data <- data[data$RelativeAbundance > 0.001 &
+                 data$Prevalence > 0.2 &
+                 abs(data$log2FC) > 2, ]
+  # 3. Load taxonomy annotation
+  tax <- read.table("data/fig5/phylum_species.txt",header = TRUE, sep = "\t")
+  use_tax <- tax[tax$Species %in% data$otu.name, ]
+  # 4. Load phylum color mapping
+  phylum <- read.table("data/fig5/phylum_color.txt",header = TRUE, sep = "\t",comment.char = "")
+  # Manually adjust color for specific phylum
+  phylum$color[phylum$Phylum == "p__Ascomycota"] <- "black"
+  # -------------------------------
+  # 5. Map phylum colors to taxa
+  # -------------------------------
+  use_tax$col <- NA
+  
+  for(i in 1:nrow(use_tax)){
+    use_tax$col[i] <- phylum$color[
+      phylum$Phylum == use_tax$Phylum[i]
+    ]
+  }
+  rownames(use_tax) <- use_tax$Species
+  use_tax <- use_tax[data$otu.name, ]
+  data$col <- use_tax$col
+  # 6. Order taxa by effect size
+  data$otu.name <- factor(
+    data$otu.name,
+    levels = data$otu.name[order(data$effect.size)]
+  )
+  # 7. Define group based on log2FC
+  data$Group <- ifelse(data$log2FC > 0,
+                       "mucosa",
+                       "lumen")
+  # 8. Generate bar plot
+  p <- ggplot(data,
+              aes(x = otu.name,
+                  y = effect.size,
+                  fill = Group)) +
+    geom_col() +
+    coord_flip() +
+    theme_classic() +
+    scale_fill_manual(values = c("#065535", "#f2622a")) +
+    theme(
+      axis.text.y = element_text(
+        colour = data$col[order(data$effect.size)],
+        size = 8,
+        face = "bold"
+      ),
+      axis.text.x = element_text(size = 8, color = "black"),
+      legend.position = "none",
+      axis.line.y = element_blank(),
+      axis.ticks.y = element_blank()
+    ) +
+    labs(x = "")
+  
+  return(p)
+}
+###Figure 5C
+g2 <- plot_locom_bar("data/fig5/stomach_mucosa_lumen_locom.txt")
+g3 <- plot_locom_bar("data/fig5/SI_mucosa_lumen_locom.txt")
+g4 <- plot_locom_bar("data/fig5/LI_mucosa_lumen_locom.txt")
